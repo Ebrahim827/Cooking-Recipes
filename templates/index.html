@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eb's Fridge Dish</title>
+    <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/1046/1046747.png?v=2">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Outfit', sans-serif; background-color: #0b0f19bd; color: #ffffff; }
+        .white-input-box { background-color: #ffffff; color: #000000; }
+        .emerald-gradient { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+    </style>
+</head>
+<body class="min-h-screen py-10 px-4">
+
+    <div class="max-w-2xl mx-auto">
+        <header class="text-center mb-12">
+            <h1 class="text-5xl font-bold tracking-tighter mb-2">Dish <span class="text-emerald-500">From Fridge</span></h1>
+            <div class="h-1 w-24 emerald-gradient mx-auto rounded-full"></div>
+        </header>
+
+        <div class="space-y-6">
+            <div class="relative">
+                <textarea id="input" class="white-input-box w-full rounded-3xl p-6 h-48 text-lg font-medium outline-none shadow-2xl focus:ring-4 focus:ring-emerald-500/20" placeholder="What's in your fridge?"></textarea>
+                <button onclick="startVoice()" class="absolute bottom-6 right-6 p-3 rounded-full hover:bg-gray-100 transition-all">
+                    <svg id="micIcon" xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-emerald-500" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                    </svg>
+                </button>
+            </div>
+            <button onclick="makeRecipe()" id="btn" class="emerald-gradient w-full py-5 rounded-3xl font-bold text-xl text-white shadow-lg hover:brightness-110 transition-all">Generate Recipe ✨</button>
+        </div>
+
+        <div id="loader" class="hidden mt-16 text-center">
+            <div class="inline-block w-10 h-10 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
+            <p class="mt-4 text-emerald-500 font-bold animate-pulse">Chef is cooking...</p>
+        </div>
+
+        <div id="recipeCard" class="hidden mt-12 bg-gray-900/80 border border-gray-800 rounded-[2.5rem] p-8 shadow-2xl">
+            <img id="rImage" src="" class="w-full h-72 object-cover rounded-3xl mb-6 border border-gray-800 shadow-inner">
+            <h2 id="rTitle" class="text-3xl font-bold text-white mb-8 border-b border-gray-800 pb-6"></h2>
+            <div id="rIngredients" class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-8"></div>
+            <div id="rSteps" class="space-y-6"></div>
+        </div>
+    </div>
+
+    <script>
+        function startVoice() {
+            const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+            recognition.onresult = (e) => { document.getElementById('input').value = e.results[0][0].transcript; };
+            recognition.start();
+        }
+
+        async function makeRecipe() {
+            const inputVal = document.getElementById('input').value;
+            const rImage = document.getElementById('rImage');
+            const btn = document.getElementById('btn');
+            
+            if(!inputVal) return alert("Please list ingredients!");
+
+            btn.disabled = true;
+            rImage.src = ""; // Clear old image
+            document.getElementById('loader').classList.remove('hidden');
+            document.getElementById('recipeCard').classList.add('hidden');
+
+            try {
+                // 1. Get Recipe JSON from your Flask backend
+                const response = await fetch('/get-recipe', { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({ ingredients: inputVal }) 
+                });
+                const data = await response.json();
+
+                // 2. Get Google Credentials from your updated /get-google-config route
+                const configRes = await fetch('/get-google-config');
+                const config = await configRes.json();
+
+                // 3. Search Google Images for accuracy
+                // We add "plated professional food photography" to force real food results
+                const searchQuery = `${data.title} plated professional food photography`;
+                const googleUrl = `https://www.googleapis.com/customsearch/v1?key=${config.key}&cx=${config.cx}&q=${encodeURIComponent(searchQuery)}&searchType=image&num=1&imgType=photo&safe=active`;
+
+                const imgRes = await fetch(googleUrl);
+                const imgData = await imgRes.json();
+
+                // 4. Update Image with Cache Buster
+                if (imgData.items && imgData.items.length > 0) {
+                    rImage.src = imgData.items[0].link + "?t=" + new Date().getTime();
+                } else {
+                    rImage.src = "https://images.pexels.com/photos/1640777/pexels-photo-1640777.jpeg";
+                }
+
+                // 5. Update UI Text
+                document.getElementById('rTitle').innerText = data.title;
+                document.getElementById('rIngredients').innerHTML = data.ingredients.map(i => `<div class="bg-emerald-500/10 p-4 rounded-2xl text-emerald-400 text-sm border border-emerald-500/20 font-bold">• ${i}</div>`).join('');
+                document.getElementById('rSteps').innerHTML = data.instructions.map((s, idx) => `<div class="flex gap-4"><div class="text-emerald-500 font-bold text-xl">${idx+1}</div><p class="text-gray-300 leading-relaxed">${s}</p></div>`).join('');
+
+                document.getElementById('recipeCard').classList.remove('hidden');
+                document.getElementById('recipeCard').scrollIntoView({ behavior: 'smooth' });
+
+            } catch (e) {
+                alert("Chef encountered an error! Check your Google API limits or Console.");
+                console.error(e);
+            } finally {
+                document.getElementById('loader').classList.add('hidden');
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
